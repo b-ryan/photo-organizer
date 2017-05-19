@@ -82,7 +82,8 @@ def _add_tags(filename, tags):
 def main(args):
     known_people = KnownPeople.load()
     for filename in args:
-        print(known_people.identify_all(filename))
+        names = known_people.identify_all(filename)
+        _add_tags(filename, names)
 
 if __name__ == "__main__":
     main(sys.argv[1:])
