@@ -7,6 +7,7 @@ import face_recognition as face_rec
 from face_recognition.cli import scan_known_people
 import scipy.misc
 import pickle
+import click
 
 TAG_KEY = "Iptc.Application2.Keywords"
 KNOWN_FACES_DIR = os.path.expanduser("~/Pictures/face_recog_known_people")
@@ -65,6 +66,24 @@ class KnownPeople(object):
                 for encoding in face_rec.face_encodings(image)]
 
 
+@click.group()
+def cli():
+    pass
+
+
+@click.command("get-tags")
+@click.argument("filenames", nargs=-1)
+def get_tags(filenames):
+    for filename in filenames:
+        metadata = pyexiv2.ImageMetadata(filename)
+        metadata.read()
+        try:
+            image_tags = metadata[TAG_KEY].raw_value
+        except KeyError:
+            image_tags = []
+        print(filename, image_tags)
+
+
 def _add_tags(filename, tags):
     metadata = pyexiv2.ImageMetadata(filename)
     metadata.read()
@@ -79,11 +98,27 @@ def _add_tags(filename, tags):
             metadata.write()
 
 
-def main(args):
+@click.command("identify")
+@click.argument("filenames", nargs=-1)
+def identify(filenames):
     known_people = KnownPeople.load()
-    for filename in args:
+    for filename in filenames:
+        names = known_people.identify_all(filename)
+        print(filename, names)
+
+
+@click.command("tag")
+@click.argument("filenames", nargs=-1)
+def tag(filenames):
+    known_people = KnownPeople.load()
+    for filename in filenames:
         names = known_people.identify_all(filename)
         _add_tags(filename, names)
 
+
+cli.add_command(get_tags)
+cli.add_command(identify)
+cli.add_command(tag)
+
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    cli()
