@@ -1,3 +1,4 @@
 pillow
 face_recognition
 click
+py3exiv2
