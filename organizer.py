@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import sys
 from PIL import Image, ExifTags
-import pyexiv2
 import os
 import face_recognition as face_rec
 from face_recognition.cli import scan_known_people
@@ -9,8 +8,9 @@ import scipy.misc
 import pickle
 import click
 import config
+import db
+import tags
 
-TAG_KEY = "Iptc.Application2.Keywords"
 ORIENTATION_EXIF_TAG = 274
 
 
@@ -33,22 +33,6 @@ def _rotate_accordingly(pil_image):
     if not rotation:
         return pil_image
     return pil_image.rotate(rotation, expand=True)
-
-
-def _add_tags(filename, tags):
-    if not tags:
-        return
-    metadata = pyexiv2.ImageMetadata(filename)
-    metadata.read()
-    try:
-        image_tags = metadata[TAG_KEY].raw_value
-    except KeyError:
-        image_tags = []
-    for tag in tags:
-        if tag not in image_tags:
-            image_tags.append(tag)
-            metadata[TAG_KEY] = pyexiv2.IptcTag(TAG_KEY, image_tags)
-            metadata.write()
 
 
 class KnownPeople(object):
@@ -86,13 +70,7 @@ class KnownPeople(object):
 @click.argument("filenames", nargs=-1)
 def get_tags(filenames):
     for filename in filenames:
-        metadata = pyexiv2.ImageMetadata(filename)
-        metadata.read()
-        try:
-            image_tags = metadata[TAG_KEY].raw_value
-        except KeyError:
-            image_tags = []
-        print(filename, image_tags)
+        print(filename, tags.get(filename))
 
 
 @click.command("identify")
@@ -113,7 +91,7 @@ def tag(filenames):
         if "Unknown" in names:
             print(filename, "has unknown person(people)")
             names.remove("Unknown")
-        _add_tags(filename, names)
+        tags.add(filename, names)
 
 
 @click.group()
