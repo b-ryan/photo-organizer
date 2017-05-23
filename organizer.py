@@ -8,18 +8,18 @@ from face_recognition.cli import scan_known_people
 import scipy.misc
 import pickle
 import click
+import config
 
 TAG_KEY = "Iptc.Application2.Keywords"
-KNOWN_FACES_DIR = os.path.expanduser("~/Pictures/face_recog_known_people")
 ORIENTATION_EXIF_TAG = 274
 
 
-def _scale_image_if_large(image):
+def _scale_image_if_large(scipy_image):
     # taken directly from http://tinyurl.com/momhalb
-    if image.shape[1] > 1600:
-        scale_factor = 1600.0 / image.shape[1]
-        return scipy.misc.imresize(image, scale_factor)
-    return image
+    if scipy_image.shape[1] > 1600:
+        scale_factor = 1600.0 / scipy_image.shape[1]
+        return scipy.misc.imresize(scipy_image, scale_factor)
+    return scipy_image
 
 
 def _rotate_accordingly(pil_image):
@@ -35,6 +35,22 @@ def _rotate_accordingly(pil_image):
     return pil_image.rotate(rotation, expand=True)
 
 
+def _add_tags(filename, tags):
+    if not tags:
+        return
+    metadata = pyexiv2.ImageMetadata(filename)
+    metadata.read()
+    try:
+        image_tags = metadata[TAG_KEY].raw_value
+    except KeyError:
+        image_tags = []
+    for tag in tags:
+        if tag not in image_tags:
+            image_tags.append(tag)
+            metadata[TAG_KEY] = pyexiv2.IptcTag(TAG_KEY, image_tags)
+            metadata.write()
+
+
 class KnownPeople(object):
     def __init__(self, names, encodings):
         self.names = names
@@ -42,11 +58,11 @@ class KnownPeople(object):
 
     @classmethod
     def load(cls):
-        if os.path.exists("known-people-cache"):
-            with open("known-people-cache", "rb") as f:
+        if os.path.exists(config.KNOWN_PEOPLE_CACHE):
+            with open(config.KNOWN_PEOPLE_CACHE, "rb") as f:
                 return pickle.loads(f.read())
-        known_people = cls(*scan_known_people(KNOWN_FACES_DIR))
-        with open("known-people-cache", "wb") as f:
+        known_people = cls(*scan_known_people(config.KNOWN_FACES_DIR))
+        with open(config.KNOWN_PEOPLE_CACHE, "wb") as f:
             f.write(pickle.dumps(known_people))
         return known_people
 
@@ -62,13 +78,8 @@ class KnownPeople(object):
         pil_img = _rotate_accordingly(Image.open(filename))
         image = scipy.misc.fromimage(pil_img, mode="RGB")
         image = _scale_image_if_large(image)
-        return [self.identify_encoding(encoding)
-                for encoding in face_rec.face_encodings(image)]
-
-
-@click.group()
-def cli():
-    pass
+        return list(set([self.identify_encoding(encoding)
+                         for encoding in face_rec.face_encodings(image)]))
 
 
 @click.command("get-tags")
@@ -82,20 +93,6 @@ def get_tags(filenames):
         except KeyError:
             image_tags = []
         print(filename, image_tags)
-
-
-def _add_tags(filename, tags):
-    metadata = pyexiv2.ImageMetadata(filename)
-    metadata.read()
-    try:
-        image_tags = metadata[TAG_KEY].raw_value
-    except KeyError:
-        image_tags = []
-    for tag in tags:
-        if tag not in image_tags:
-            image_tags.append(tag)
-            metadata[TAG_KEY] = pyexiv2.IptcTag(TAG_KEY, image_tags)
-            metadata.write()
 
 
 @click.command("identify")
@@ -113,8 +110,15 @@ def tag(filenames):
     known_people = KnownPeople.load()
     for filename in filenames:
         names = known_people.identify_all(filename)
+        if "Unknown" in names:
+            print(filename, "has unknown person(people)")
+            names.remove("Unknown")
         _add_tags(filename, names)
 
+
+@click.group()
+def cli():
+    pass
 
 cli.add_command(get_tags)
 cli.add_command(identify)
